@@ -991,6 +991,11 @@ func (in *NetworkPolicySpec) DeepCopyInto(out *NetworkPolicySpec) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.AllowHTTPS != nil {
+		in, out := &in.AllowHTTPS, &out.AllowHTTPS
+		*out = new(bool)
+		**out = **in
+	}
 	if in.AdditionalEgress != nil {
 		in, out := &in.AdditionalEgress, &out.AdditionalEgress
 		*out = make([]networkingv1.NetworkPolicyEgressRule, len(*in))

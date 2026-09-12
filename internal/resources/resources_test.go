@@ -2024,6 +2024,77 @@ func TestBuildNetworkPolicy_DNSDisabled(t *testing.T) {
 	}
 }
 
+func TestBuildNetworkPolicy_AllowHTTPS(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		allowHTTPS *bool
+		allowDNS   *bool
+		wantHTTPS  bool
+		wantRules  int
+	}{
+		{name: "omitted", wantHTTPS: true, wantRules: 2},
+		{name: "enabled", allowHTTPS: Ptr(true), wantHTTPS: true, wantRules: 2},
+		{name: "disabled", allowHTTPS: Ptr(false), wantRules: 1},
+		{name: "dns and https disabled", allowHTTPS: Ptr(false), allowDNS: Ptr(false), wantRules: 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			instance := newTestInstance("np-https")
+			instance.Spec.Security.NetworkPolicy.AllowHTTPS = tt.allowHTTPS
+			instance.Spec.Security.NetworkPolicy.AllowDNS = tt.allowDNS
+			np := BuildNetworkPolicy(instance)
+			if len(np.Spec.Egress) != tt.wantRules {
+				t.Fatalf("egress rules = %d, want %d", len(np.Spec.Egress), tt.wantRules)
+			}
+			foundHTTPS := false
+			for _, rule := range np.Spec.Egress {
+				for _, port := range rule.Ports {
+					if port.Port != nil && port.Port.IntValue() == 443 &&
+						port.Protocol != nil && *port.Protocol == corev1.ProtocolTCP && len(rule.To) == 0 {
+						foundHTTPS = true
+					}
+				}
+			}
+			if foundHTTPS != tt.wantHTTPS {
+				t.Errorf("unrestricted TCP/443 rule present = %v, want %v", foundHTTPS, tt.wantHTTPS)
+			}
+			// An empty egress list must still enforce egress isolation.
+			if !equality.Semantic.DeepEqual(np.Spec.PolicyTypes, []networkingv1.PolicyType{
+				networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress,
+			}) {
+				t.Errorf("unexpected policy types: %v", np.Spec.PolicyTypes)
+			}
+		})
+	}
+}
+
+func TestBuildNetworkPolicy_HTTPSDisabledPreservesOtherRules(t *testing.T) {
+	instance := newTestInstance("np-restricted-https")
+	instance.Spec.SelfConfigure.Enabled = true
+	instance.Spec.Chromium.Enabled = true
+	instance.Spec.Tailscale.Enabled = true
+	instance.Spec.Security.NetworkPolicy.AllowedEgressCIDRs = []string{"10.20.0.0/16"}
+	instance.Spec.Security.NetworkPolicy.AdditionalEgress = []networkingv1.NetworkPolicyEgressRule{
+		{
+			To: []networkingv1.NetworkPolicyPeer{
+				{IPBlock: &networkingv1.IPBlock{CIDR: "192.0.2.10/32"}},
+			},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{Protocol: Ptr(corev1.ProtocolTCP), Port: Ptr(intstr.FromInt(443))},
+			},
+		},
+	}
+
+	want := BuildNetworkPolicy(instance)
+	// Remove only the default HTTPS rule; DNS, API server, mesh, Chromium, CIDRs,
+	// custom destination-scoped HTTPS, and ingress must remain unchanged.
+	want.Spec.Egress = append(want.Spec.Egress[:1], want.Spec.Egress[2:]...)
+	instance.Spec.Security.NetworkPolicy.AllowHTTPS = Ptr(false)
+	got := BuildNetworkPolicy(instance)
+	if !equality.Semantic.DeepEqual(got, want) {
+		t.Errorf("disabling HTTPS changed other policy rules:\ngot: %+v\nwant: %+v", got.Spec, want.Spec)
+	}
+}
+
 func TestBuildNetworkPolicy_AllowedNamespaces(t *testing.T) {
 	instance := newTestInstance("np-ns")
 	instance.Spec.Security.NetworkPolicy.AllowedIngressNamespaces = []string{

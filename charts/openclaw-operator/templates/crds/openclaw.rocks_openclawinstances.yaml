@@ -6130,8 +6130,8 @@ spec:
                     properties:
                       additionalEgress:
                         description: |-
-                          AdditionalEgress appends custom egress rules to the default DNS + HTTPS rules.
-                          Use this to allow traffic to cluster-internal services on non-standard ports.
+                          AdditionalEgress appends custom egress rules to the enabled built-in rules.
+                          Use this to allow specific destinations and ports, including HTTPS when AllowHTTPS is false.
                         items:
                           description: |-
                             NetworkPolicyEgressRule describes a particular set of traffic that is allowed out of pods
@@ -6324,6 +6324,12 @@ spec:
                         default: true
                         description: AllowDNS allows DNS resolution (port 53)
                         type: boolean
+                      allowHTTPS:
+                        default: true
+                        description: |-
+                          AllowHTTPS allows TCP port 443 egress to any destination, including private addresses.
+                          Set to false and use AdditionalEgress to allow HTTPS only to specific destinations.
+                        type: boolean
                       allowSameNamespaceIngress:
                         default: true
                         description: |-
@@ -6333,8 +6339,8 @@ spec:
                         type: boolean
                       allowedEgressCIDRs:
                         description: |-
-                          AllowedEgressCIDRs is a list of CIDRs this instance can reach
-                          Default allows all egress on port 443 for AI APIs
+                          AllowedEgressCIDRs is a list of CIDRs this instance can reach on all ports.
+                          These permissions are additive to the other enabled egress rules.
                         items:
                           type: string
                         type: array

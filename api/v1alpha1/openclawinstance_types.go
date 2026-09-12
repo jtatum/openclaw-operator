@@ -660,8 +660,8 @@ type NetworkPolicySpec struct {
 	// +optional
 	AllowSameNamespaceIngress *bool `json:"allowSameNamespaceIngress,omitempty"`
 
-	// AllowedEgressCIDRs is a list of CIDRs this instance can reach
-	// Default allows all egress on port 443 for AI APIs
+	// AllowedEgressCIDRs is a list of CIDRs this instance can reach on all ports.
+	// These permissions are additive to the other enabled egress rules.
 	// +optional
 	AllowedEgressCIDRs []string `json:"allowedEgressCIDRs,omitempty"`
 
@@ -670,8 +670,14 @@ type NetworkPolicySpec struct {
 	// +optional
 	AllowDNS *bool `json:"allowDNS,omitempty"`
 
-	// AdditionalEgress appends custom egress rules to the default DNS + HTTPS rules.
-	// Use this to allow traffic to cluster-internal services on non-standard ports.
+	// AllowHTTPS allows TCP port 443 egress to any destination, including private addresses.
+	// Set to false and use AdditionalEgress to allow HTTPS only to specific destinations.
+	// +kubebuilder:default=true
+	// +optional
+	AllowHTTPS *bool `json:"allowHTTPS,omitempty"`
+
+	// AdditionalEgress appends custom egress rules to the enabled built-in rules.
+	// Use this to allow specific destinations and ports, including HTTPS when AllowHTTPS is false.
 	// +optional
 	AdditionalEgress []networkingv1.NetworkPolicyEgressRule `json:"additionalEgress,omitempty"`
 }
