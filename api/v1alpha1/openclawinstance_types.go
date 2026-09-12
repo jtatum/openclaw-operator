@@ -77,6 +77,8 @@ type OpenClawInstanceSpec struct {
 	// metadata and downloaded bytes against a committed SHA-512 integrity value.
 	// Mutually exclusive with Plugins. Requires an OpenClaw image supporting
 	// npm-pack: installs and --accept-capabilities. Changes trigger a pod rollout.
+	// Install-only: removing entries does not uninstall persisted plugins or
+	// revoke consent. This is not an exclusive runtime plugin allowlist.
 	// +kubebuilder:validation:MaxItems=20
 	// +listType=map
 	// +listMapKey=package
