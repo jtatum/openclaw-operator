@@ -22,6 +22,8 @@ import corev1 "k8s.io/api/core/v1"
 type PluginInstallSpec struct {
 	// Resources sets requests and limits for the plugin installer and, when enabled,
 	// its scratch-directory initializer. It does not change gateway resources.
+	// Resource claims are not supported; only requests and limits may be set.
+	// +kubebuilder:validation:XValidation:rule="!has(self.claims) || size(self.claims) == 0",message="plugin installer resource claims are not supported"
 	// +optional
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 	// InheritEnv copies spec.env and spec.envFrom into the installer. Defaults to

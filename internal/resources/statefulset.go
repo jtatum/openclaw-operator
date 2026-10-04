@@ -1470,7 +1470,7 @@ func buildPluginsInitContainer(instance *openclawv1alpha1.OpenClawInstance) *cor
 			AllowPrivilegeEscalation: Ptr(false),
 			ReadOnlyRootFilesystem:   Ptr(pluginInstallReadOnly(instance)),
 			RunAsUser:                mainSC.RunAsUser,
-			RunAsNonRoot:             mainSC.RunAsNonRoot,
+			RunAsNonRoot:             Ptr(podRunAsNonRoot(instance)),
 			Capabilities: &corev1.Capabilities{
 				Drop: []corev1.Capability{"ALL"},
 			},
