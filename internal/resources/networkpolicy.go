@@ -260,17 +260,19 @@ func buildEgressRules(instance *openclawv1alpha1.OpenClawInstance) []networkingv
 		})
 	}
 
-	// Allow HTTPS egress for AI APIs (port 443)
-	// This is essential for OpenClaw to communicate with AI providers
-	rules = append(rules, networkingv1.NetworkPolicyEgressRule{
-		To: []networkingv1.NetworkPolicyPeer{},
-		Ports: []networkingv1.NetworkPolicyPort{
-			{
-				Protocol: Ptr(corev1.ProtocolTCP),
-				Port:     Ptr(intstr.FromInt(443)),
+	// Allow HTTPS egress for AI APIs if enabled (default: true).
+	allowHTTPS := instance.Spec.Security.NetworkPolicy.AllowHTTPS == nil || *instance.Spec.Security.NetworkPolicy.AllowHTTPS
+	if allowHTTPS {
+		rules = append(rules, networkingv1.NetworkPolicyEgressRule{
+			To: []networkingv1.NetworkPolicyPeer{},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Protocol: Ptr(corev1.ProtocolTCP),
+					Port:     Ptr(intstr.FromInt(443)),
+				},
 			},
-		},
-	})
+		})
+	}
 
 	// Allow K8s API server egress when self-configure is enabled, or when the
 	// mesh provider's sidecar manages its state via the API (Tailscale's

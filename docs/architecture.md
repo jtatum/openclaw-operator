@@ -172,8 +172,28 @@ When `security.networkPolicy.enabled` is `true` (the default), the operator crea
 
 **Egress rules:**
 - Allow DNS (UDP/TCP port 53) when `allowDNS` is `true` (default).
-- Allow HTTPS (TCP port 443) to any destination -- required for AI provider API calls.
-- Allow additional CIDRs specified in `allowedEgressCIDRs`.
+- Allow HTTPS (TCP port 443) to any destination, including private addresses, when `allowHTTPS` is `true` (default).
+- Allow additional CIDRs specified in `allowedEgressCIDRs` on all ports.
+- Append custom rules from `additionalEgress`.
+
+Set `security.networkPolicy.allowHTTPS: false` to remove the unrestricted TCP/443 rule and allow only specific HTTPS destinations through `additionalEgress`:
+
+```yaml
+spec:
+  security:
+    networkPolicy:
+      enabled: true
+      allowHTTPS: false
+      additionalEgress:
+        - to:
+            - ipBlock:
+                cidr: 192.0.2.10/32 # Replace with your HTTPS endpoint's IP range.
+          ports:
+            - protocol: TCP
+              port: 443
+```
+
+DNS remains enabled by default. Other rules, including `allowedEgressCIDRs`, custom egress, and feature-specific rules for self-configuration, mesh networking, and Chromium, remain additive. When disabling unrestricted HTTPS, explicitly allow the HTTPS endpoints needed by AI providers and enabled features, including the Kubernetes API and mesh control servers where applicable.
 
 ### RBAC (Least Privilege)
 
