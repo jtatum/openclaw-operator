@@ -643,6 +643,9 @@ func buildInitContainers(instance *openclawv1alpha1.OpenClawInstance, externalWo
 
 	// Plugins init container (only if plugins are defined)
 	if pluginsContainer := buildPluginsInitContainer(instance); pluginsContainer != nil {
+		if pluginInstallReadOnly(instance) {
+			initContainers = append(initContainers, buildPluginScratchInitContainer(pluginsContainer))
+		}
 		initContainers = append(initContainers, *pluginsContainer)
 	}
 
@@ -1437,11 +1440,20 @@ func buildPluginsInitContainer(instance *openclawv1alpha1.OpenClawInstance) *cor
 		})
 	}
 
-	// Append user-supplied env vars after hardcoded defaults so that
-	// credentials are available during plugin installation.
-	// Hardcoded vars (HOME, NPM_CONFIG_PREFIX, NPM_CONFIG_CACHE,
-	// NPM_CONFIG_IGNORE_SCRIPTS) take precedence because they appear first.
-	env = append(env, instance.Spec.Env...)
+	envFrom := instance.Spec.EnvFrom
+	if instance.Spec.PluginInstall == nil || instance.Spec.PluginInstall.InheritEnv == nil || *instance.Spec.PluginInstall.InheritEnv {
+		env = append(env, instance.Spec.Env...)
+	} else {
+		envFrom = nil
+	}
+	resources := corev1.ResourceRequirements{}
+	if options := instance.Spec.PluginInstall; options != nil {
+		resources = *options.Resources.DeepCopy()
+	}
+	if pluginInstallReadOnly(instance) {
+		mounts = append(mounts, corev1.VolumeMount{Name: pluginScratchVolume, MountPath: "/tmp", SubPath: "private"})
+	}
+	mainSC := buildContainerSecurityContext(instance)
 
 	return &corev1.Container{
 		Name:                     "init-plugins",
@@ -1450,13 +1462,15 @@ func buildPluginsInitContainer(instance *openclawv1alpha1.OpenClawInstance) *cor
 		Args:                     args,
 		ImagePullPolicy:          getPullPolicy(instance),
 		Env:                      env,
-		EnvFrom:                  instance.Spec.EnvFrom,
+		EnvFrom:                  envFrom,
+		Resources:                resources,
 		TerminationMessagePath:   corev1.TerminationMessagePathDefault,
 		TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 		SecurityContext: &corev1.SecurityContext{
 			AllowPrivilegeEscalation: Ptr(false),
-			ReadOnlyRootFilesystem:   Ptr(false), // npm needs to write to node_modules
-			RunAsNonRoot:             Ptr(podRunAsNonRoot(instance)),
+			ReadOnlyRootFilesystem:   Ptr(pluginInstallReadOnly(instance)),
+			RunAsUser:                mainSC.RunAsUser,
+			RunAsNonRoot:             mainSC.RunAsNonRoot,
 			Capabilities: &corev1.Capabilities{
 				Drop: []corev1.Capability{"ALL"},
 			},
@@ -2602,6 +2616,16 @@ func buildVolumes(instance *openclawv1alpha1.OpenClawInstance, skillPacks *Resol
 				EmptyDir: &corev1.EmptyDirVolumeSource{},
 			},
 		})
+	}
+
+	if hasPlugins(instance) && pluginInstallReadOnly(instance) {
+		limit := resource.MustParse("128Mi")
+		if configured, ok := instance.Spec.PluginInstall.Resources.Limits[corev1.ResourceEphemeralStorage]; ok {
+			limit = configured.DeepCopy()
+		}
+		volumes = append(volumes, corev1.Volume{Name: pluginScratchVolume, VolumeSource: corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: &limit},
+		}})
 	}
 
 	// Runtime dep tmp volumes

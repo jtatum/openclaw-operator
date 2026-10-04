@@ -22,6 +22,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -31,6 +33,25 @@ import (
 // Exercise the generated schema with a real API server, including when the
 // optional validating webhook is not installed.
 var _ = Describe("Verified plugin CRD validation", func() {
+	It("preserves installer controls through API admission", func() {
+		inherit := false
+		instance := &openclawv1alpha1.OpenClawInstance{
+			ObjectMeta: metav1.ObjectMeta{Name: "installer-schema", Namespace: "default"},
+			Spec: openclawv1alpha1.OpenClawInstanceSpec{
+				Plugins: []string{"npm:example@1.2.3"},
+				PluginInstall: &openclawv1alpha1.PluginInstallSpec{
+					InheritEnv: &inherit, ReadOnlyRootFilesystem: true,
+					Resources: corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")}},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, instance, client.DryRunAll)).To(Succeed())
+		Expect(instance.Spec.PluginInstall).NotTo(BeNil())
+		Expect(instance.Spec.PluginInstall.InheritEnv).To(Equal(&inherit))
+		Expect(instance.Spec.PluginInstall.ReadOnlyRootFilesystem).To(BeTrue())
+		Expect(instance.Spec.PluginInstall.Resources.Limits.Memory().Cmp(resource.MustParse("1Gi"))).To(BeZero())
+	})
+
 	DescribeTable("validates declarative pins", func(version, integrity string, legacy, duplicate, valid bool) {
 		pin := openclawv1alpha1.VerifiedPluginSpec{
 			Package: "@example/plugin", Version: version, Integrity: integrity,
