@@ -1019,7 +1019,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#resourcerequirements-v1-core)_ | Resources sets requests and limits for the plugin installer and, when enabled,<br />its scratch-directory initializer. It does not change gateway resources. |  | Optional: \{\} <br /> |
+| `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#resourcerequirements-v1-core)_ | Resources sets requests and limits for the plugin installer and, when enabled,<br />its scratch-directory initializer. It does not change gateway resources.<br />Resource claims are not supported; only requests and limits may be set. |  | Optional: \{\} <br /> |
 | `inheritEnv` _boolean_ | InheritEnv copies spec.env and spec.envFrom into the installer. Defaults to<br />true for compatibility. Set false to avoid exposing runtime credentials;<br />operator-managed HOME, npm settings and CA bundle configuration remain. |  | Optional: \{\} <br /> |
 | `readOnlyRootFilesystem` _boolean_ | ReadOnlyRootFilesystem mounts the installer root filesystem read-only.<br />A non-root init container prepares a private 0700 scratch directory in an<br />emptyDir, mounted at /tmp via subPath. This avoids fsGroup's non-sticky<br />world-writable volume root. Persistent npm prefix/cache paths remain writable.<br />The emptyDir size limit follows resources.limits.ephemeral-storage when set,<br />otherwise 128Mi. Defaults to false, preserving the image's sticky /tmp. |  | Optional: \{\} <br /> |
 

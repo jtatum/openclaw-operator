@@ -703,6 +703,8 @@ Obtain candidate metadata with `npm view <package>@<exact-version> dist.integrit
 ### Plugin installer controls
 
 `spec.pluginInstall` applies to both `spec.plugins` and `spec.verifiedPlugins`.
+Its resources support requests and limits; resource claims are rejected during
+API validation because the operator does not provision pod resource claims.
 Defaults preserve the existing installer behavior. To keep runtime environment
 secrets out of the installer, bound its resources, and use a read-only image:
 
@@ -726,6 +728,10 @@ it does not change the gateway environment. The operator still supplies HOME,
 npm paths, lifecycle-script suppression, and a configured CA bundle. This is
 environment isolation, not a sandbox: the installer still mounts persistent
 OpenClaw state and uses the pod network.
+
+The installer and scratch initializer use the gateway's effective UID for file
+ownership, but retain the pod-level `runAsNonRoot` policy. A gateway-only
+`containerSecurityContext.runAsNonRoot` override does not change that policy.
 
 Read-only mode adds `init-plugin-scratch`, using the same runtime image and
 resource limits, without runtime environment variables. It creates a directory

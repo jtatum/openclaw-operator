@@ -5861,6 +5861,7 @@ spec:
                     description: |-
                       Resources sets requests and limits for the plugin installer and, when enabled,
                       its scratch-directory initializer. It does not change gateway resources.
+                      Resource claims are not supported; only requests and limits may be set.
                     properties:
                       claims:
                         description: |-
@@ -5918,6 +5919,9 @@ spec:
                           More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                         type: object
                     type: object
+                    x-kubernetes-validations:
+                    - message: plugin installer resource claims are not supported
+                      rule: '!has(self.claims) || size(self.claims) == 0'
                 type: object
               plugins:
                 description: |-

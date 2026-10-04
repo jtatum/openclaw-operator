@@ -17,6 +17,7 @@ limitations under the License.
 package resources
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -154,5 +155,63 @@ func TestPluginInstallWithoutPlugins(t *testing.T) {
 	}
 	if findVolume(sts.Spec.Template.Spec.Volumes, pluginScratchVolume) != nil {
 		t.Fatal("unused scratch volume")
+	}
+}
+
+func TestPluginInstallNonRootPolicy(t *testing.T) {
+	for _, verified := range []bool{false, true} {
+		for _, readOnly := range []bool{false, true} {
+			for _, policy := range []struct {
+				name    string
+				pod     *bool
+				gateway bool
+				want    bool
+			}{
+				{name: "default pod policy", gateway: false, want: true},
+				{name: "explicit non-root pod", pod: Ptr(true), gateway: false, want: true},
+				{name: "pod permits root", pod: Ptr(false), gateway: true, want: false},
+			} {
+				t.Run(fmt.Sprintf("verified=%t/readOnly=%t/%s", verified, readOnly, policy.name), func(t *testing.T) {
+					instance := newTestInstance("non-root-policy")
+					if verified {
+						instance.Spec.VerifiedPlugins = []openclawv1alpha1.VerifiedPluginSpec{{Package: "example", Version: "1.2.3", Integrity: "sha512-pin"}}
+					} else {
+						instance.Spec.Plugins = []string{"npm:example@1.2.3"}
+					}
+					if readOnly {
+						instance.Spec.PluginInstall = &openclawv1alpha1.PluginInstallSpec{ReadOnlyRootFilesystem: true}
+					}
+					instance.Spec.Security.PodSecurityContext = &openclawv1alpha1.PodSecurityContextSpec{RunAsNonRoot: policy.pod}
+					instance.Spec.Security.ContainerSecurityContext = &openclawv1alpha1.ContainerSecurityContextSpec{
+						RunAsUser: Ptr(int64(2000)), RunAsNonRoot: Ptr(policy.gateway),
+					}
+					sts := BuildStatefulSet(instance, "", nil, nil, nil)
+					checked := 0
+					for _, c := range sts.Spec.Template.Spec.InitContainers {
+						if c.Name != "init-plugins" && c.Name != "init-plugin-scratch" {
+							continue
+						}
+						checked++
+						if c.SecurityContext.RunAsNonRoot == nil || *c.SecurityContext.RunAsNonRoot != policy.want {
+							t.Errorf("%s must retain pod non-root policy %t", c.Name, policy.want)
+						}
+						if c.SecurityContext.RunAsUser == nil || *c.SecurityContext.RunAsUser != 2000 {
+							t.Errorf("%s must use gateway UID", c.Name)
+						}
+					}
+					wantContainers := 1
+					if readOnly {
+						wantContainers++
+					}
+					if checked != wantContainers {
+						t.Fatalf("checked %d containers, want %d", checked, wantContainers)
+					}
+					main := buildMainContainer(instance, "")
+					if *main.SecurityContext.RunAsNonRoot != policy.gateway {
+						t.Fatal("gateway must retain its own non-root policy")
+					}
+				})
+			}
+		}
 	}
 }
