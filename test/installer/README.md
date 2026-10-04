@@ -27,20 +27,13 @@ Repeat against the intended runtime image when upgrading pins. These tests exerc
 
 The opt-in `Verified plugin installation` E2E spec exercises the modified operator, real init containers, PVC persistence, and a running gateway. It verifies that a wrong digest and missing consent prevent startup, then checks a valid installation through the gateway's `plugins.inspect` RPC before and after pod replacement. It supplies `gateway.bind: lan` explicitly for compatibility with the pinned runtime and uses no provider credentials.
 
-The PVC state directory must be owned by the runtime UID (1000 in this fixture): OpenClaw 2026.9.4 tightens directory permissions during both verified and legacy plugin installs, which fails on a root-owned volume even when it is group-writable. Storage ownership preparation is a test prerequisite; this change does not add an operator ownership-repair mechanism.
+The PVC state directory must be owned by the runtime UID (1000 in this fixture): OpenClaw 2026.9.4 tightens directory permissions during both verified and legacy plugin installs, which fails on a root-owned volume even when it is group-writable. The operator now prepares this ownership by default through `init-data-owner` (`spec.storage.fixOwnership`). If that feature is disabled, prepare ownership out of band before running this test.
 
 Run it in a dedicated cluster with its own kubeconfig. For example, with Kind, Docker, Helm, kubectl, and Go installed:
 
 ```sh
 verified_kubeconfig=$(mktemp)
 kind create cluster --name verified-plugin-e2e --kubeconfig "$verified_kubeconfig"
-# Kind's default provisioner creates root-owned directories. Configure only this
-# disposable cluster's storage fixture to create directories owned by UID 1000.
-# Kind v0.33 uses a minimal helper without chown; select BusyBox instead.
-kubectl --kubeconfig "$verified_kubeconfig" -n local-path-storage patch deployment local-path-provisioner \
-  --type json -p '[{"op":"test","path":"/spec/template/spec/containers/0/command/3","value":"--helper-image"},{"op":"replace","path":"/spec/template/spec/containers/0/command/4","value":"docker.io/library/busybox:1.37.0"}]'
-kubectl --kubeconfig "$verified_kubeconfig" -n local-path-storage patch configmap local-path-config \
-  --type merge -p '{"data":{"setup":"#!/bin/sh\nset -eu\nmkdir -m 0700 -p \"$VOL_DIR\"\nchown 1000:1000 \"$VOL_DIR\"\n"}}'
 docker build --build-arg TARGETARCH="$(go env GOARCH)" -t openclaw-operator:verified-test .
 kind load docker-image openclaw-operator:verified-test --name verified-plugin-e2e
 helm upgrade --install verified-operator charts/openclaw-operator \
