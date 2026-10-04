@@ -712,6 +712,7 @@ var reservedInitContainerNames = map[string]bool{
 	"init-python":              true,
 	"init-skills":              true,
 	"init-plugins":             true,
+	"init-plugin-scratch":      true,
 	"init-ollama":              true,
 	"init-plugin-runtime-deps": true,
 }
