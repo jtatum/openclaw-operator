@@ -221,6 +221,25 @@ Setting `S3_PROVIDER` to the correct value (e.g., `AWS`, `GCS`) enables provider
 
 `spec.autoUpdate.backupTimeout` (default `30m`, clamped to `5m`-`24h`) covers scale-down, pod termination, scheduling, and backup execution/retries. Its start time is persisted in `status.autoUpdate.backupStartedAt`. Kubernetes also enforces the Job execution budget if the operator is unavailable. On timeout or failure, `status.autoUpdate.updatePhase` becomes `AbortingBackup` while the operator stops the Job and waits for its Pods. It then restores the old version, records `lastUpdateError`, and waits for `checkInterval` before retrying. Cleanup and application startup may extend beyond the backup budget. The pre-delete `spec.backup.timeout` setting is unchanged.
 
+If a full backup consistently takes longer than `backupTimeout`, **every update attempt will abort**, leaving the instance on its old version and repeating the downtime after each `checkInterval`. The budget does not grow automatically. Size it above the measured full-backup duration, with headroom for shutdown, scheduling, and retries. For example, a backup that takes about 35 minutes cannot complete within the default 30-minute budget:
+
+```yaml
+spec:
+  autoUpdate:
+    backupTimeout: "1h"  # Example budget with headroom for a measured 35-minute backup
+```
+
+A longer timeout also permits a longer outage; use excludes and transfer tuning below to reduce the work where possible.
+
+When an abort begins, the operator persists `AutoUpdateBlocked=True` in `status.conditions`, with reason `PreUpdateBackupFailed` and the failure details in its message. This condition remains through cleanup, recovery, and subsequent backup retries, even after `updatePhase` is cleared. It is removed when a later update passes or skips the backup stage. Alert on this condition to detect blocked updates separately from application readiness. The operator also records `status.autoUpdate.lastUpdateError` and emits the existing `AutoUpdateAborted` Warning Event once cleanup and scale-up complete. Kubernetes Job failure details, including `DeadlineExceeded`, are retained in the error and condition message before the Job is deleted.
+
+Inspect the condition with:
+
+```bash
+kubectl get openclawinstance <name> -n <namespace> \
+  -o jsonpath='{.status.conditions[?(@.type=="AutoUpdateBlocked")]}'
+```
+
 To reduce the data transferred, configure `spec.backup.excludes` with [rclone glob patterns](https://rclone.org/filtering/) relative to the PVC root, for example `/tmp/plugin-captures/**`. The filters apply to pre-update, pre-delete, periodic uploads, and periodic snapshot copies. They do not filter restores or remove existing remote data. Excluded files are absent from new snapshots, so select only regenerable data.
 
 `spec.backup.transfers` and `spec.backup.checkers` tune concurrency (defaults `8` and `16`; allowed range `1`-`256`). `spec.backup.fastList: true` reduces listing requests on supported backends at the cost of memory. Defaults preserve the current transfer behavior. Each pre-update backup still uses a fresh timestamped destination for its rollback snapshot; incremental pre-update uploads are not implemented.

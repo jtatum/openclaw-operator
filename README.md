@@ -1219,6 +1219,8 @@ When enabled, the operator resolves `latest` to the highest stable semver tag on
 
 If pre-update backup exceeds `backupTimeout` (default `30m`), the operator stops the backup Job, waits for its Pods to terminate, and restarts the old version without applying the update. Cleanup and startup can add time beyond the backup budget. The deadline survives operator restarts; the Job also has a Kubernetes execution deadline. The next attempt waits for `checkInterval`. `spec.backup.timeout` remains the separate pre-delete timeout.
 
+If full backups consistently exceed the budget, every attempt will abort and the instance will stay on its old version. Set `backupTimeout` above the measured backup duration with headroom for shutdown, scheduling, and retries (for example, `1h` for a measured 35-minute backup). A longer budget also permits longer downtime. Failures set a persistent `AutoUpdateBlocked=True` condition with reason `PreUpdateBackupFailed` as soon as cleanup starts; it remains until a later update passes or skips the backup stage. The operator also records `lastUpdateError` and emits an `AutoUpdateAborted` Warning Event after recovery. See [backup timeout guidance and alerting](docs/backup-restore.md#pre-update-backup-deadline-and-transfer-controls).
+
 Safety mechanisms include failed-version tracking (skips versions that failed health checks), a circuit breaker (pauses after 3 consecutive rollbacks), and snapshot restore when `backupBeforeUpdate` is enabled. Auto-update is a no-op for digest-pinned images (`spec.image.digest`).
 
 See `status.autoUpdate` for update progress: `kubectl get openclawinstance my-agent -o jsonpath='{.status.autoUpdate}'`

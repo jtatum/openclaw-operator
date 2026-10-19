@@ -2168,6 +2168,10 @@ const (
 	// ConditionTypeAutoUpdateAvailable indicates a newer version is available
 	ConditionTypeAutoUpdateAvailable = "AutoUpdateAvailable"
 
+	// ConditionTypeAutoUpdateBlocked indicates a pre-update backup failed and
+	// remains set until a later update passes or skips the backup stage.
+	ConditionTypeAutoUpdateBlocked = "AutoUpdateBlocked"
+
 	// ConditionTypeScheduledBackupReady indicates the periodic backup CronJob is configured
 	ConditionTypeScheduledBackupReady = "ScheduledBackupReady"
 

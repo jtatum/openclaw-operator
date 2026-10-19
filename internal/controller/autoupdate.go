@@ -287,6 +287,10 @@ func (r *OpenClawInstanceReconciler) driveUpdateStateMachine(ctx context.Context
 		}
 	}
 
+	// Keep backup failures visible across recovery and retries. Only clear the
+	// condition once an attempt passes (or explicitly skips) the backup stage.
+	meta.RemoveStatusCondition(&instance.Status.Conditions, openclawv1alpha1.ConditionTypeAutoUpdateBlocked)
+
 	// Step 3: Save previous version for rollback
 	instance.Status.AutoUpdate.PreviousVersion = instance.Spec.Image.Tag
 
@@ -706,6 +710,11 @@ func (r *OpenClawInstanceReconciler) drivePreUpdateBackup(ctx context.Context, i
 			return ctrl.Result{}, true, nil
 		}
 		if finished && condition == batchv1.JobFailed {
+			for _, jobCondition := range existingJob.Status.Conditions {
+				if jobCondition.Type == batchv1.JobFailed && jobCondition.Status == corev1.ConditionTrue {
+					return ctrl.Result{}, false, fmt.Errorf("pre-update backup job %s failed: %s: %s", jobName, jobCondition.Reason, jobCondition.Message)
+				}
+			}
 			return ctrl.Result{}, false, fmt.Errorf("pre-update backup job %s failed", jobName)
 		}
 	}
@@ -819,6 +828,13 @@ func (r *OpenClawInstanceReconciler) abortPreUpdateBackup(ctx context.Context, i
 	if instance.Status.AutoUpdate.UpdatePhase != updatePhaseAbortingBackup {
 		instance.Status.AutoUpdate.UpdatePhase = updatePhaseAbortingBackup
 		instance.Status.AutoUpdate.LastUpdateError = reason
+		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+			Type:               openclawv1alpha1.ConditionTypeAutoUpdateBlocked,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: instance.Generation,
+			Reason:             "PreUpdateBackupFailed",
+			Message:            reason,
+		})
 		if err := r.Status().Update(ctx, instance); err != nil {
 			return retry, err
 		}

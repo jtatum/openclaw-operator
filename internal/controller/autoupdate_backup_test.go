@@ -26,6 +26,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
@@ -75,7 +76,7 @@ func preUpdateFixture(t *testing.T) (*OpenClawInstanceReconciler, *openclawv1alp
 		}
 	}
 	instance := &openclawv1alpha1.OpenClawInstance{
-		ObjectMeta: metav1.ObjectMeta{Name: "deadline-test", Namespace: "default", UID: "test-uid"},
+		ObjectMeta: metav1.ObjectMeta{Name: "deadline-test", Namespace: "default", UID: "test-uid", Generation: 1},
 		Spec:       openclawv1alpha1.OpenClawInstanceSpec{Image: openclawv1alpha1.ImageSpec{Tag: "2026.9.9"}},
 		Status: openclawv1alpha1.OpenClawInstanceStatus{
 			Phase:      openclawv1alpha1.PhaseUpdating,
@@ -228,6 +229,12 @@ func TestPreUpdateBackupAbortWaitsForPodsAndRetries(t *testing.T) {
 	if result, err := r.driveUpdateStateMachine(testCtx, instance); err == nil || result.RequeueAfter == 0 {
 		t.Fatal("expected retry on delete error")
 	}
+	reloadPreUpdate(t, r, instance)
+	blocked := meta.FindStatusCondition(instance.Status.Conditions, "AutoUpdateBlocked")
+	if blocked == nil || blocked.Status != metav1.ConditionTrue || blocked.ObservedGeneration != instance.Generation || !strings.Contains(blocked.Message, "timed out") {
+		t.Fatalf("backup failure must be visible before cleanup succeeds: %+v", blocked)
+	}
+	transitionTime := blocked.LastTransitionTime
 	for range 2 {
 		reloadPreUpdate(t, r, instance)
 		if _, err := r.driveUpdateStateMachine(testCtx, instance); err != nil {
@@ -261,11 +268,22 @@ func TestPreUpdateBackupAbortWaitsForPodsAndRetries(t *testing.T) {
 	if instance.Status.AutoUpdate.PendingVersion != "" || *sts.Spec.Replicas != 1 || shouldCheckForUpdate(instance) {
 		t.Fatal("recovery must restore service and delay next retry")
 	}
+	blocked = meta.FindStatusCondition(instance.Status.Conditions, "AutoUpdateBlocked")
+	if blocked == nil || blocked.Status != metav1.ConditionTrue || !blocked.LastTransitionTime.Equal(&transitionTime) {
+		t.Fatalf("backup failure must remain visible after cleanup and recovery: %+v", blocked)
+	}
 }
 
 func TestPreUpdateBackupSuccessRecordsRollbackDestination(t *testing.T) {
 	r, instance, sts, job := preUpdateFixture(t)
 	testCtx := context.Background()
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type: "AutoUpdateBlocked", Status: metav1.ConditionTrue,
+		Reason: "PreUpdateBackupFailed", Message: "previous attempt timed out",
+	})
+	if err := r.Status().Update(testCtx, instance); err != nil {
+		t.Fatal(err)
+	}
 	path := "backups/default/deadline-test/pre-update-snapshot"
 	job.Spec.Template.Spec.Containers = []corev1.Container{{Name: "rclone", Args: []string{"sync", "/data/", ":s3:test/" + path}}}
 	if err := r.Update(testCtx, job); err != nil {
@@ -275,10 +293,16 @@ func TestPreUpdateBackupSuccessRecordsRollbackDestination(t *testing.T) {
 	if err := r.Status().Update(testCtx, job); err != nil {
 		t.Fatal(err)
 	}
-	for range 2 {
+	for attempt := range 2 {
 		reloadPreUpdate(t, r, instance)
 		if _, err := r.driveUpdateStateMachine(testCtx, instance); err != nil {
 			t.Fatal(err)
+		}
+		if attempt == 0 {
+			reloadPreUpdate(t, r, instance)
+			if !meta.IsStatusConditionTrue(instance.Status.Conditions, "AutoUpdateBlocked") {
+				t.Fatal("starting a retry must not clear the previous backup failure")
+			}
 		}
 	}
 	reloadPreUpdate(t, r, instance)
@@ -287,6 +311,66 @@ func TestPreUpdateBackupSuccessRecordsRollbackDestination(t *testing.T) {
 	}
 	if instance.Spec.Image.Tag != "2026.10.1" || instance.Status.AutoUpdate.PreUpdateBackupPath != path || *sts.Spec.Replicas != 1 {
 		t.Fatalf("completed backup did not advance safely: %+v", instance.Status.AutoUpdate)
+	}
+	if meta.FindStatusCondition(instance.Status.Conditions, "AutoUpdateBlocked") != nil {
+		t.Fatal("successful backup must clear the previous failure condition")
+	}
+}
+
+func TestPreUpdateBackupFailureCondition(t *testing.T) {
+	for _, reason := range []string{"DeadlineExceeded", "BackoffLimitExceeded"} {
+		t.Run(reason, func(t *testing.T) {
+			r, instance, _, job := preUpdateFixture(t)
+			testCtx := context.Background()
+			job.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: reason}}
+			if err := r.Status().Update(testCtx, job); err != nil {
+				t.Fatal(err)
+			}
+			for range 4 {
+				reloadPreUpdate(t, r, instance)
+				if instance.Status.AutoUpdate.PendingVersion == "" {
+					break
+				}
+				if _, err := r.driveUpdateStateMachine(testCtx, instance); err != nil {
+					t.Fatal(err)
+				}
+			}
+			reloadPreUpdate(t, r, instance)
+			blocked := meta.FindStatusCondition(instance.Status.Conditions, "AutoUpdateBlocked")
+			if instance.Status.AutoUpdate.PendingVersion != "" || blocked == nil || blocked.Status != metav1.ConditionTrue || blocked.Reason != "PreUpdateBackupFailed" || !strings.Contains(blocked.Message, reason) {
+				t.Fatalf("failed backup must leave an actionable condition after recovery: %+v", blocked)
+			}
+			if blocked.Message != instance.Status.AutoUpdate.LastUpdateError {
+				t.Fatal("condition and lastUpdateError must report the same failure")
+			}
+		})
+	}
+}
+
+func TestPreUpdateBackupConditionClearsWhenBackupDisabled(t *testing.T) {
+	r, instance, _, job := preUpdateFixture(t)
+	testCtx := context.Background()
+	// A previous aborted attempt has already cleaned up its Job.
+	if err := r.Delete(testCtx, job); err != nil {
+		t.Fatal(err)
+	}
+	instance.Spec.AutoUpdate.BackupBeforeUpdate = resources.Ptr(false)
+	if err := r.Update(testCtx, instance); err != nil {
+		t.Fatal(err)
+	}
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type: "AutoUpdateBlocked", Status: metav1.ConditionTrue,
+		Reason: "PreUpdateBackupFailed", Message: "previous attempt timed out",
+	})
+	if err := r.Status().Update(testCtx, instance); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.driveUpdateStateMachine(testCtx, instance); err != nil {
+		t.Fatal(err)
+	}
+	reloadPreUpdate(t, r, instance)
+	if instance.Spec.Image.Tag != "2026.10.1" || meta.FindStatusCondition(instance.Status.Conditions, "AutoUpdateBlocked") != nil {
+		t.Fatal("applying an update without backup must clear the previous backup failure")
 	}
 }
 
