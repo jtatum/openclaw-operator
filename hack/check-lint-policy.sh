@@ -34,13 +34,15 @@ EOF
 
 status=0
 "$linter" run --config "$repo_root/.golangci.yaml" ./... > lint.log 2>&1 || status=$?
-cat lint.log
+# Keep expected diagnostics captured: GitHub would annotate them as errors.
 if [ "$status" -ne 1 ]; then
+  cat lint.log
   echo "Expected lint violations (exit 1), got exit $status for invalid naming."
   exit 1
 fi
 for check in ST1003 ST1016; do
   if ! grep -q "$check:" lint.log; then
+    cat lint.log
     echo "Missing expected $check diagnostic from the repository lint config."
     exit 1
   fi
