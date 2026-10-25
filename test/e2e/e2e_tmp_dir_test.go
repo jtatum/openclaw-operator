@@ -48,9 +48,9 @@ var _ = Describe("Sticky /tmp for the main container", func() {
 		if os.Getenv("E2E_SKIP_RESOURCE_VALIDATION") == "true" {
 			Skip("Skipping resource validation in minimal mode")
 		}
-		namespace = "test-tmp-dir-" + time.Now().Format("20060102150405")
-		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "test-tmp-dir-"}}
 		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
+		namespace = ns.Name
 	})
 
 	AfterEach(func() {
@@ -58,7 +58,7 @@ var _ = Describe("Sticky /tmp for the main container", func() {
 		_ = k8sClient.Delete(ctx, ns)
 	})
 
-	It("Should create the sticky subdirectory and mount it at /tmp", func() {
+	DescribeTable("Should create the sticky subdirectory and mount it at /tmp", func(uid *int64, nonRoot *bool, wantNonRoot bool) {
 		instance := &openclawv1alpha1.OpenClawInstance{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "tmp-dir",
@@ -71,6 +71,11 @@ var _ = Describe("Sticky /tmp for the main container", func() {
 				Image: openclawv1alpha1.ImageSpec{
 					Repository: "ghcr.io/openclaw/openclaw",
 					Tag:        "latest",
+				},
+				Security: openclawv1alpha1.SecuritySpec{
+					ContainerSecurityContext: &openclawv1alpha1.ContainerSecurityContextSpec{
+						RunAsUser: uid, RunAsNonRoot: nonRoot,
+					},
 				},
 			},
 		}
@@ -92,9 +97,9 @@ var _ = Describe("Sticky /tmp for the main container", func() {
 		}
 		Expect(initTmp).NotTo(BeNil(), "init-tmp-dir must always be rendered")
 		Expect(initTmp.SecurityContext).NotTo(BeNil())
-		Expect(initTmp.SecurityContext.RunAsUser).To(BeNil(),
-			"init-tmp-dir must run as the pod UID so that UID owns the directory")
-		Expect(initTmp.SecurityContext.RunAsNonRoot).To(HaveValue(BeTrue()))
+		Expect(initTmp.SecurityContext.RunAsUser).To(Equal(uid),
+			"init-tmp-dir must follow the gateway UID override or inherit the pod UID")
+		Expect(initTmp.SecurityContext.RunAsNonRoot).To(HaveValue(Equal(wantNonRoot)))
 		Expect(initTmp.VolumeMounts).To(ConsistOf(corev1.VolumeMount{Name: "tmp", MountPath: "/tmp-volume"}))
 
 		var mainTmp *corev1.VolumeMount
@@ -113,5 +118,9 @@ var _ = Describe("Sticky /tmp for the main container", func() {
 		Expect(mainTmp.Name).To(Equal("tmp"))
 		Expect(mainTmp.SubPath).To(Equal(resources.MainTmpSubPath),
 			"mounting the emptyDir root would expose its 2777 mode to OpenClaw")
-	})
+	},
+		Entry("with default non-root settings", nil, nil, true),
+		Entry("with a non-root container UID override", resources.Ptr(int64(2000)), nil, true),
+		Entry("with an explicit root container override", resources.Ptr(int64(0)), resources.Ptr(false), false),
+	)
 })
