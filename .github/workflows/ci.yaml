@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  GO_VERSION: '1.25'
+  GO_VERSION: '1.27.3'
   REGISTRY: ghcr.io
 
 jobs:
@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: ['1.25', '1.27']
+        go-version: ['1.25', '1.27.3']
     steps:
       - uses: actions/checkout@v4
 
@@ -150,7 +150,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: ['1.25', '1.27']
+        go-version: ['1.25', '1.27.3']
     steps:
       - uses: actions/checkout@v4
 

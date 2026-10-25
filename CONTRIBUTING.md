@@ -42,7 +42,7 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 
 ### Prerequisites
 
-- Go 1.25+ (CI tests Go 1.25 and 1.27)
+- Go 1.25+ (CI tests Go 1.25 and 1.27.3)
 - Node.js 22+ (verified plugin installer tests)
 - Docker
 - kubectl
@@ -77,6 +77,8 @@ directory under `bin/`. This keeps the linter's build toolchain independent of
 your installed Go version and replaces the old v1 tooling without a global
 installation. `make lint` and `make test` use your selected Go toolchain; for
 example, `GOTOOLCHAIN=go1.25.0 make lint test` checks the minimum Go version.
+CI, container builds, and releases use Go 1.27.3, the latest stable release at
+the time of this update. The module minimum remains Go 1.25.0.
 
 ### Running Locally
 
