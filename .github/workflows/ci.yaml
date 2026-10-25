@@ -35,6 +35,9 @@ jobs:
           version: v2.15.0
           args: --timeout=5m
 
+      - name: Verify lint policy
+        run: make test-lint-policy GOLANGCI_LINT="$(command -v golangci-lint)"
+
   reconcile-guard:
     name: Reconcile Guard
     runs-on: ubuntu-latest

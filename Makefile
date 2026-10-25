@@ -148,8 +148,12 @@ verify-signing: ## Verify the latest published release is Cosign-signed and SBOM
 	echo "OK: $${IMAGE} is signed and SBOM-attested."
 
 .PHONY: lint
-lint: golangci-lint ## Run golangci-lint linter.
+lint: test-lint-policy ## Run golangci-lint and its policy regression checks.
 	$(GOLANGCI_LINT) run
+
+.PHONY: test-lint-policy
+test-lint-policy: golangci-lint ## Verify naming and receiver checks with the repository lint config.
+	bash hack/check-lint-policy.sh "$(GOLANGCI_LINT)"
 
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes.

@@ -80,6 +80,10 @@ example, `GOTOOLCHAIN=go1.25.0 make lint test` checks the minimum Go version.
 CI, container builds, and releases use Go 1.27.3, the latest stable release at
 the time of this update. The module minimum remains Go 1.25.0.
 
+`make lint` also runs `make test-lint-policy`, which checks that identifier naming
+and receiver-name consistency violations are rejected by the full repository
+configuration. CI runs these regression probes on both Go versions.
+
 ### Running Locally
 
 ```bash
