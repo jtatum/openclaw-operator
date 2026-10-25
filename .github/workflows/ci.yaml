@@ -12,20 +12,23 @@ env:
 
 jobs:
   lint:
-    name: Lint
+    name: Lint (Go ${{ matrix.go-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: ['1.25', '1.27']
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version: ${{ matrix.go-version }}
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: v1.64.5
-          install-mode: goinstall
+          version: v2.15.0
           args: --timeout=5m
 
   reconcile-guard:
@@ -142,14 +145,18 @@ jobs:
           fi
 
   test:
-    name: Test
+    name: Test (Go ${{ matrix.go-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: ['1.25', '1.27']
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version: ${{ matrix.go-version }}
 
       - uses: actions/setup-node@v4
         with:

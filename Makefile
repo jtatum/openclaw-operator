@@ -213,14 +213,14 @@ KUBECTL ?= kubectl
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
-GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
+GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)/golangci-lint
 OPERATOR_SDK ?= $(LOCALBIN)/operator-sdk
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.3.0
 CONTROLLER_TOOLS_VERSION ?= v0.17.2
 ENVTEST_VERSION ?= release-0.19
-GOLANGCI_LINT_VERSION ?= v1.64.5
+GOLANGCI_LINT_VERSION ?= v2.15.0
 OPERATOR_SDK_VERSION ?= v1.38.0
 
 .PHONY: kustomize
@@ -240,8 +240,10 @@ $(ENVTEST): $(LOCALBIN)
 
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
-$(GOLANGCI_LINT): $(LOCALBIN)
-	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+$(GOLANGCI_LINT): | $(LOCALBIN)
+	# Use official binaries built with a supported Go toolchain, including on Go 1.25.
+	# The versioned directory avoids reusing an incompatible cached v1 binary.
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_LINT_VERSION)/install.sh | sh -s -- -b "$(dir $(GOLANGCI_LINT))" $(GOLANGCI_LINT_VERSION)
 
 .PHONY: operator-sdk
 operator-sdk: $(OPERATOR_SDK) ## Download operator-sdk locally if necessary.
